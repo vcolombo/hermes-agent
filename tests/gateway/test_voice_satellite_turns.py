@@ -63,3 +63,22 @@ def test_audio_ignored_outside_listening_and_reentry_ignored():
     assert m.on_pipeline_start(now=0.1) is False  # already in a turn
     m.to_idle()
     assert m.phase is tm.TurnPhase.IDLE
+
+
+def test_stale_transcript_callback_aborts_without_dispatch():
+    m = make_machine()
+    assert m.on_transcript_ready("late result") == ("abort",)  # IDLE: stale
+    assert m.phase is tm.TurnPhase.IDLE
+    m.on_pipeline_start(now=0.0)
+    assert m.on_transcript_ready("late result") == ("abort",)  # LISTENING: stale
+    assert m.phase is tm.TurnPhase.IDLE
+
+
+def test_on_reply_started_allows_thinking_and_idle_dedups_speaking():
+    m = make_machine()
+    m.on_reply_started()  # IDLE: announce path
+    assert m.phase is tm.TurnPhase.SPEAKING
+    m.on_reply_started()  # duplicate: no-op
+    assert m.phase is tm.TurnPhase.SPEAKING
+    m.on_playback_done()
+    assert m.phase is tm.TurnPhase.IDLE

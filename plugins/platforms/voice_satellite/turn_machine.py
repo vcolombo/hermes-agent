@@ -44,6 +44,9 @@ class TurnMachine:
     ) -> Optional[tuple]:
         if self.phase is not TurnPhase.LISTENING:
             return None
+        # Timeout is checked before feeding: the chunk that crosses the
+        # deadline is dropped rather than endpoint-checked (intentional —
+        # a turn that stalled this long should abort, not dispatch).
         if now - self._listen_started > self.listen_timeout_seconds:
             self.to_idle()
             return ("abort",)
@@ -54,6 +57,12 @@ class TurnMachine:
         return ("transcribe", utterance, rate)
 
     def on_transcript_ready(self, text: str) -> tuple:
+        if self.phase is not TurnPhase.TRANSCRIBING:
+            # Stale or duplicate STT callback (turn already aborted or a
+            # new turn started): reset and abort rather than fabricating
+            # a dispatch from a phase that never requested transcription.
+            self.to_idle()
+            return ("abort",)
         if not text:
             self.to_idle()
             return ("abort",)
@@ -61,6 +70,12 @@ class TurnMachine:
         return ("dispatch", text)
 
     def on_reply_started(self) -> None:
+        # Called by play_tts from THINKING (turn reply) or IDLE (announce
+        # path — marking the satellite busy while an announcement plays).
+        # No-op when already SPEAKING so duplicate playback events can't
+        # re-enter.
+        if self.phase is TurnPhase.SPEAKING:
+            return
         self.phase = TurnPhase.SPEAKING
 
     def on_playback_done(self) -> None:
