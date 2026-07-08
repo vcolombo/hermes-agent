@@ -83,3 +83,30 @@ async def test_ping_gets_pong_and_transcript_and_tts_flow(fake_and_link):
     await link.play_pcm(pcm, rate=22050)
     await asyncio.wait_for(sat.tts_done.wait(), timeout=5)
     assert bytes(sat.play_buffer) == pcm
+
+
+@pytest.mark.asyncio
+async def test_write_after_stop_raises_connection_error(fake_and_link):
+    sat, link, rec = fake_and_link
+    await link.stop()
+    with pytest.raises(ConnectionError):
+        await link.send_transcript("too late")
+
+
+@pytest.mark.asyncio
+async def test_handler_exception_does_not_drop_the_link(fake_and_link):
+    sat, link, rec = fake_and_link
+
+    async def exploding(name, pcm, seconds, rate):
+        rec.chunks.append((name, pcm, seconds, rate))
+        rec.got_audio.set()
+        raise RuntimeError("handler bug")
+
+    link._on_audio_chunk = exploding
+    await sat.wake_and_stream(b"\x01\x00" * 1600)  # one 0.1s chunk
+    await asyncio.wait_for(rec.got_audio.wait(), timeout=5)
+    await asyncio.sleep(0.2)  # give a would-be reconnect time to happen
+    assert link.connected is True
+    # link still works: a transcript write succeeds after the handler error
+    await link.send_transcript("still alive")
+    await asyncio.wait_for(sat.transcript_received.wait(), timeout=5)

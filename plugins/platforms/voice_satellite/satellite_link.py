@@ -67,12 +67,13 @@ class SatelliteLink:
 
     async def _close_client(self) -> None:
         self.connected = False
-        if self._client is not None:
-            try:
-                await self._client.disconnect()
-            except Exception:  # noqa: BLE001 - best-effort close
-                pass
-            self._client = None
+        async with self._write_lock:
+            if self._client is not None:
+                try:
+                    await self._client.disconnect()
+                except Exception:  # noqa: BLE001 - best-effort close
+                    pass
+                self._client = None
 
     async def _run_forever(self) -> None:
         delay = 1.0
@@ -111,7 +112,14 @@ class SatelliteLink:
                     self.name, self.host, self.port,
                 )
                 continue
-            await self._dispatch(event)
+            try:
+                await self._dispatch(event)
+            except (ConnectionError, OSError):
+                raise
+            except Exception:
+                logger.exception(
+                    "[voice_satellite:%s] event handler error", self.name
+                )
 
     async def _dispatch(self, event) -> None:
         if Ping.is_type(event.type):
@@ -132,10 +140,16 @@ class SatelliteLink:
         # detection / streaming-started / streaming-stopped etc.: no-op in M1
 
     async def _write(self, event) -> None:
-        if self._client is None:
-            raise ConnectionError(f"satellite {self.name} not connected")
         async with self._write_lock:
-            await self._client.write_event(event)
+            client = self._client
+            if client is None:
+                raise ConnectionError(f"satellite {self.name} not connected")
+            try:
+                await client.write_event(event)
+            except (OSError, ConnectionError) as err:
+                raise ConnectionError(
+                    f"satellite {self.name} write failed: {err}"
+                ) from err
 
     async def send_transcript(self, text: str) -> None:
         """End the satellite's mic streaming (empty text aborts the turn)."""
