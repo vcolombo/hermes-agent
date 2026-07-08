@@ -522,6 +522,11 @@ def register(ctx) -> None:
         label="Voice Satellite",
         adapter_factory=lambda cfg: VoiceSatelliteAdapter(cfg),
         check_fn=check_requirements,
+        # is_connected = "satellites listed in config", exactly what
+        # validate_config checks. Without this hook the setup wizard falls
+        # back to check_fn and reports the platform configured whenever the
+        # wyoming dep happens to be importable.
+        is_connected=validate_config,
         validate_config=validate_config,
         apply_yaml_config_fn=_apply_yaml_config,
         install_hint="pip install 'hermes-agent[satellite]'",

@@ -91,6 +91,18 @@ def test_register_declares_platform_entry():
     assert callable(calls["check_fn"])
     assert calls["apply_yaml_config_fn"] is _mod._apply_yaml_config
     assert "voice" in calls["platform_hint"].lower() or "aloud" in calls["platform_hint"].lower()
+    # is_connected must reflect config presence, NOT dependency presence:
+    # the setup wizard probes it with a bare PlatformConfig and would
+    # otherwise report the platform "configured" just because wyoming is
+    # importable (check_fn's answer).
+    assert callable(calls["is_connected"])
+    assert calls["is_connected"](PlatformConfig(enabled=True)) is False
+    assert calls["is_connected"](
+        PlatformConfig(
+            enabled=True,
+            extra={"satellites": [{"name": "kitchen", "host": "10.0.0.5", "port": 10700}]},
+        )
+    ) is True
 
 
 @pytest_asyncio.fixture
