@@ -242,6 +242,10 @@ class HAConversationAdapter(BasePlatformAdapter):
                 finally:
                     self._active_window = None
                     ack_task.cancel()
+                    # Let an in-flight ack write settle before the final
+                    # respond decision below, and retrieve any stray
+                    # exception from the ack task instead of dropping it.
+                    await asyncio.gather(ack_task, return_exceptions=True)
 
                 if failed:
                     await respond("Sorry, something went wrong handling that.")

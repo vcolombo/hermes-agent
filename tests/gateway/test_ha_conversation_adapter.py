@@ -175,6 +175,52 @@ async def test_concurrent_utterances_serialize_and_both_answer(rig):
 
 
 @pytest.mark.asyncio
+async def test_run_turn_and_wait_bridges_real_session_task(monkeypatch):
+    """Exercises the real handle_message -> _start_session_processing ->
+    _session_tasks bridge that _run_turn_and_wait relies on, instead of the
+    handle_message monkeypatch every other test in this file uses (which
+    never populates _session_tasks and never runs the `await task` branch).
+
+    Only _process_message_background is stubbed — the deepest practical
+    seam that still lets the base class genuinely install the session
+    guard, spawn the task via asyncio.create_task, and record it in
+    _session_tasks the same way production does. The fake also mirrors the
+    minimal cleanup that _process_message_background's own finally block
+    performs (dropping _active_sessions/_session_tasks), so a second
+    utterance proves the bridge doesn't wedge the session.
+    """
+    adapter = _mod.HAConversationAdapter(make_config())
+
+    async def _unused_handler(event):
+        return None
+
+    adapter.set_message_handler(_unused_handler)
+
+    async def fake_process_message_background(event, session_key):
+        await asyncio.sleep(0.05)
+        await adapter.send("home", "bridged reply")
+        adapter._active_sessions.pop(session_key, None)
+        adapter._session_tasks.pop(session_key, None)
+
+    monkeypatch.setattr(
+        adapter, "_process_message_background", fake_process_message_background
+    )
+    assert await adapter.connect() is True
+    try:
+        event = await _ask(adapter, "what time is it")
+        assert Handled.is_type(event.type)
+        assert Handled.from_event(event).text == "bridged reply"
+
+        # A second utterance must also be answered — proves cleanup didn't
+        # leave the adapter wedged behind a stale session guard/task.
+        event2 = await _ask(adapter, "what time is it now")
+        assert Handled.is_type(event2.type)
+        assert Handled.from_event(event2).text == "bridged reply"
+    finally:
+        await adapter.disconnect()
+
+
+@pytest.mark.asyncio
 async def test_waiting_cap_returns_busy(rig):
     adapter, replies = rig
 
