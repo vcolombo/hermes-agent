@@ -13,6 +13,8 @@ deliveries (cron results, completed tasks) are announced through the speaker
 too.
 
 [ws]: https://github.com/rhasspy/wyoming-satellite
+[oww-train]: https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb
+[oww-2026]: https://github.com/alfiedennen/openwakeword-colab-2026
 
 ## Architecture
 
@@ -69,7 +71,8 @@ script/run \
 
 Notes:
 - There is no "Hey Hermes" wake model; test with a stock openWakeWord model
-  such as `ok_nabu` ("Okay Nabu"). Custom wake words can be trained later.
+  such as `ok_nabu` ("Okay Nabu"). See "Choosing your wake phrase" below for
+  custom phrases.
 - The `aplay -r 22050` rate must match `tts_sample_rate` below (both default
   to 22050).
 - Wrong mic or speaker? List devices with `arecord -L` / `aplay -L` and pass
@@ -83,6 +86,36 @@ Success looks like: the gateway log shows the Wyoming handshake for
 logs `heard: <transcript>`; the reply plays through the satellite speaker.
 If the handshake never appears, test reachability first:
 `python -c "import socket; socket.create_connection(('<satellite>', 10700), timeout=5)"`.
+
+## Choosing your wake phrase
+
+The wake phrase is a **per-satellite choice, made on the satellite** — Hermes
+never sees or configures it (detection runs on-device; Hermes only learns
+that a wake happened). Two options:
+
+1. **Stock models** ship with openWakeWord: `ok_nabu`, `hey_jarvis`,
+   `hey_mycroft`, `alexa`, and others. Pass the model name as
+   `--wake-word-name`.
+2. **Custom phrases** (e.g. "Okay Benson") need a one-time trained model
+   (~10–90 min in a free Google Colab, no local GPU): use the
+   [official openWakeWord training notebook][oww-train] or the hardened
+   [openwakeword-colab-2026][oww-2026] variant. Copy the resulting
+   `.tflite` onto the satellite, then:
+
+   ```bash
+   # wyoming-openwakeword: add the custom model dir
+   script/run --uri 'tcp://127.0.0.1:10400' --custom-model-dir /home/pi/wakewords
+   # wyoming-satellite: name = the model's filename stem
+   --wake-word-name 'okay_benson'
+   ```
+
+   Tips: train the phrase people will actually say (consider a second model
+   for the "hey" variant — the wake service can load several side by side),
+   and validate against the stock model first so wake-model quality and
+   pipeline problems don't get conflated.
+
+There is no zero-shot "type any phrase" detection — every new phrase needs
+its trained model. Different satellites may use different phrases.
 
 ## Configuration
 
@@ -187,8 +220,10 @@ STT/TTS against local models before assuming local is faster.
 - One turn at a time: wake word → utterance → spoken reply. The follow-up
   window (mic re-opens after a reply), spoken "working on it" acks for slow
   turns, and barge-in are planned follow-ups.
-- Wake-word detection must run on the satellite (`--wake-uri`); server-side
-  wake is not supported.
+- Wake-word detection runs on the satellite (`--wake-uri`) **by design, not
+  as a stopgap**: audio leaves the room only after an on-device wake
+  detection. Server-side wake — which would require satellites to stream
+  audio continuously — is permanently out of scope.
 - Satellites are dialed out to from config; Wyoming server/zeroconf mode
   (satellites discovering Hermes) is not supported.
 - ESPHome-native devices (Home Assistant Voice PE, ESP32-S3-BOX) need
