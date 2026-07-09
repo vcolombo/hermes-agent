@@ -397,9 +397,7 @@ def register(ctx) -> None:
         is_connected=validate_config,
         validate_config=validate_config,
         apply_yaml_config_fn=_apply_yaml_config,
-        # TODO: switch to `pip install 'hermes-agent[satellite]'` once the
-        # voice-satellite branch (which introduces that extra) is merged.
-        install_hint="pip install wyoming==1.10.0",
+        install_hint="pip install 'hermes-agent[satellite]'",
         emoji="🏠",
         pii_safe=True,
         platform_hint=(
