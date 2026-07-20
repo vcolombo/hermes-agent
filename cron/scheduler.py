@@ -3364,7 +3364,9 @@ def run_job(
             # Without a workdir, keep cwd context discovery disabled.
             skip_context_files=not bool(_job_workdir),
             load_soul_identity=True,
-            skip_memory=True,  # Cron system prompts would corrupt user representations
+            # Memory remains isolated by default. Trusted maintenance/learning
+            # jobs may explicitly opt in through the persisted job contract.
+            skip_memory=not bool(job.get("allow_memory", False)),
             platform="cron",
             session_id=_cron_session_id,
             session_db=_session_db,

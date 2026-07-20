@@ -1087,6 +1087,7 @@ def create_job(
     workdir: Optional[str] = None,
     no_agent: bool = False,
     attach_to_session: Optional[bool] = None,
+    allow_memory: bool = False,
 ) -> Dict[str, Any]:
     """
     Create a new cron job.
@@ -1131,6 +1132,9 @@ def create_job(
                 and deliver its stdout directly. Empty stdout = silent (no
                 delivery). Requires ``script`` to be set. Ideal for classic
                 watchdogs and periodic alerts that don't need LLM reasoning.
+        allow_memory: Explicitly initialize configured memory stores/providers
+                      for this agent job. Defaults to False so ordinary cron
+                      prompts cannot affect user representations.
 
     Returns:
         The created job dict
@@ -1162,6 +1166,7 @@ def create_job(
     normalized_toolsets = normalized_toolsets or None
     normalized_workdir = _normalize_workdir(workdir)
     normalized_no_agent = bool(no_agent)
+    normalized_allow_memory = bool(allow_memory)
     normalized_attach = attach_to_session if isinstance(attach_to_session, bool) else None
 
     # no_agent jobs are meaningless without a script — the script IS the job.
@@ -1258,6 +1263,10 @@ def create_job(
     # global cron.mirror_delivery config, default off).
     if normalized_attach is not None:
         job["attach_to_session"] = normalized_attach
+    # Preserve legacy records unless the capability is explicitly enabled.
+    # Missing and false are semantically identical at runtime.
+    if normalized_allow_memory:
+        job["allow_memory"] = True
 
     with _jobs_lock():
         jobs = load_jobs()
@@ -1356,8 +1365,13 @@ def update_job(job_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]
                 else:
                     updates["workdir"] = _normalize_workdir(_wd)
 
+            if "allow_memory" in updates:
+                updates["allow_memory"] = bool(updates["allow_memory"])
+
             previous_inference_axes = _normalized_inference_axes(job)
             updated = _apply_skill_fields({**job, **updates})
+            if not updated.get("allow_memory"):
+                updated.pop("allow_memory", None)
             schedule_changed = "schedule" in updates
             inference_fields_changed = bool(
                 {"provider", "model", "base_url", "no_agent"}.intersection(updates)
