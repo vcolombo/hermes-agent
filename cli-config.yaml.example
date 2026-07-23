@@ -938,6 +938,9 @@ platform_toolsets:
 # ha_conversation:
 #   enabled: true
 #   bind_host: 127.0.0.1     # use your tailnet/LAN address if HA is remote
+#   allowed_source_ips:      # mandatory for remote binds; HA host IP/CIDR only
+#     - 127.0.0.1
+#     - ::1
 #   port: 10600
 #   ack_after_seconds: 8.0
 #   announce_mode: "off"     # off | last_active | default_device | broadcast

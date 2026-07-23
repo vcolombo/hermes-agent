@@ -144,6 +144,32 @@ async def test_start_raises_when_port_taken():
 
 
 @pytest.mark.asyncio
+async def test_rejects_tcp_peer_outside_source_allowlist():
+    called = asyncio.Event()
+
+    async def record(text, context, respond):
+        called.set()
+        await respond("unexpected")
+
+    server = make_server(
+        record,
+        allowed_source_networks=("192.0.2.10/32",),
+    )
+    await server.start()
+    try:
+        reader, writer = await asyncio.open_connection("127.0.0.1", server.port)
+        try:
+            assert await asyncio.wait_for(reader.read(1), timeout=2) == b""
+        finally:
+            writer.close()
+            await writer.wait_closed()
+    finally:
+        await server.stop()
+
+    assert called.is_set() is False
+
+
+@pytest.mark.asyncio
 async def test_stop_drains_blocked_connection_and_releases_port():
     """Important-3 regression: stop() must not block on wait_closed() until
     every connection's on_transcript callback returns — a hung callback

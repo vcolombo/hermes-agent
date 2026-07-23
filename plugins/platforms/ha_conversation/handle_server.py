@@ -7,6 +7,7 @@ so callers can race an ack against the final reply safely.
 """
 
 import asyncio
+import ipaddress
 import logging
 from typing import Any, Awaitable, Callable, Dict, Optional
 
@@ -129,19 +130,56 @@ class HandleServer:
         *,
         on_transcript: TranscriptCallback,
         supports_home_control: bool = False,
+        allowed_source_networks=None,
     ):
         self._bind_host = bind_host
         self._requested_port = int(port)
         self._info = build_info(supports_home_control=supports_home_control)
         self._on_transcript = on_transcript
+        raw_networks = (
+            ("127.0.0.1/32", "::1/128")
+            if allowed_source_networks is None
+            else allowed_source_networks
+        )
+        self._allowed_source_networks = tuple(
+            network
+            if isinstance(network, (ipaddress.IPv4Network, ipaddress.IPv6Network))
+            else ipaddress.ip_network(str(network), strict=False)
+            for network in raw_networks
+        )
         self._server: Optional[asyncio.AbstractServer] = None
         self._connections: set = set()
         self.port: int = self._requested_port
+
+    def _peer_allowed(self, writer) -> bool:
+        peer = writer.get_extra_info("peername")
+        if not isinstance(peer, (tuple, list)) or not peer:
+            return False
+        try:
+            address = ipaddress.ip_address(str(peer[0]).split("%", 1)[0])
+        except ValueError:
+            return False
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+            address = address.ipv4_mapped
+        return any(
+            address.version == network.version and address in network
+            for network in self._allowed_source_networks
+        )
 
     async def start(self) -> None:
         """Bind and serve. Raises OSError if the port cannot be bound."""
 
         async def _client_connected(reader, writer):
+            if not self._peer_allowed(writer):
+                logger.warning(
+                    "[ha_conversation] rejected TCP peer outside allowed_source_ips"
+                )
+                writer.close()
+                try:
+                    await writer.wait_closed()
+                except (ConnectionError, OSError):
+                    pass
+                return
             conn_state = _ConnectionState(writer)
             self._connections.add(conn_state)
             handler = _Handler(

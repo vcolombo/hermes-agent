@@ -42,6 +42,9 @@ connection, by design of the Wyoming `handle` protocol.
    ha_conversation:
      enabled: true
      bind_host: 127.0.0.1     # use your tailnet/LAN address if HA is remote
+     allowed_source_ips:      # mandatory for remote binds; HA host IP/CIDR only
+       - 127.0.0.1
+       - ::1
      port: 10600
      ack_after_seconds: 8.0
      announce_mode: "off"     # off | last_active | default_device | broadcast
@@ -59,8 +62,10 @@ connection, by design of the Wyoming `handle` protocol.
 
 If HA runs on a different machine than Hermes, set `bind_host` to a
 LAN/tailnet address Hermes is reachable on (the default `127.0.0.1` only
-accepts connections from the same host) and make sure the port is reachable
-through any firewall between them.
+accepts connections from the same host), replace `allowed_source_ips` with
+the HA host IP or the narrowest required CIDR, and make sure the port is
+reachable through any firewall between them. A non-loopback bind without a
+valid source allowlist is rejected at startup.
 
 ## One shared conversation
 
@@ -124,11 +129,12 @@ inside that turn, the same way they would from text chat.
 The Wyoming `handle` protocol carries **no per-speaker identity** — HA
 tells this plugin what was said, not who said it. Practically:
 
-- Anyone within microphone range of an Assist device, or anything on the
-  network that can reach the bound port, is talking to your agent with its
-  full toolset and conversation history, exactly as if they'd typed to it.
-- The default bind is `127.0.0.1` (loopback only); exposing the port to a
-  LAN or tailnet is an explicit, opt-in choice you make via `bind_host`.
+- Anyone within microphone range of an Assist device, or with control of a
+  host/network admitted by `allowed_source_ips`, is talking to your agent with
+  its full toolset and conversation history, exactly as if they'd typed to it.
+- The default bind is `127.0.0.1` and the default source allowlist is loopback
+  only. A remote bind must explicitly list the HA host IP or a narrow CIDR;
+  other TCP peers are rejected before protocol handling.
 - There is **no per-utterance confirmation for destructive actions** in this
   first version — anything the agent's normal approval policy allows from
   text chat, it will also do from a spoken command reaching this port.

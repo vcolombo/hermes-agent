@@ -33,17 +33,38 @@ def test_validate_config():
         make_config(announce_mode="default_device",
                     announce_entity="assist_satellite.kitchen")
     ) is True
+    assert _mod.validate_config(make_config(bind_host="0.0.0.0")) is False
+    assert _mod.validate_config(
+        make_config(bind_host="0.0.0.0", allowed_source_ips=["192.0.2.10"])
+    ) is True
+    assert _mod.validate_config(
+        make_config(allowed_source_ips=["not-an-ip"])
+    ) is False
     # empty extra: platform unconfigured
     assert _mod.validate_config(PlatformConfig(extra={})) is False
 
 
 def test_apply_yaml_config_reads_platform_cfg_argument():
-    section = {"enabled": True, "port": 10611, "announce_mode": "broadcast"}
+    section = {
+        "enabled": True,
+        "port": 10611,
+        "announce_mode": "broadcast",
+        "allowed_source_ips": ["192.0.2.10"],
+    }
     # nested-only style: top-level key absent, loader binds the block
     extra = _mod._apply_yaml_config({}, section)
     assert extra["port"] == 10611
     assert extra["announce_mode"] == "broadcast"
+    assert extra["allowed_source_ips"] == ["192.0.2.10"]
     assert _mod._apply_yaml_config({}, {}) is None
+
+
+def test_tcp_allowlist_is_local_policy_not_upstream_authorization():
+    adapter = _mod.HAConversationAdapter(make_config())
+
+    assert adapter.authorization_is_upstream is False
+    assert adapter.enforces_own_access_policy is True
+    assert adapter._dm_policy == "allowlist"
 
 
 def test_register_declares_platform_entry():

@@ -2668,6 +2668,7 @@ DEFAULT_CONFIG = {
         # Wyoming `handle` server: Home Assistant registers Hermes as a
         # conversation agent. HA keeps wake/STT/TTS; Hermes is the brain.
         "bind_host": "127.0.0.1",  # set a LAN/tailnet address explicitly to expose
+        "allowed_source_ips": ["127.0.0.1", "::1"],  # remote binds: set HA host/CIDR
         "port": 10600,             # clear of Wyoming defaults (10700/10400/10300/10200)
         "ack_after_seconds": 8.0,  # slow turns: ack, then finish in background
         "announce_mode": "off",    # off | last_active | default_device | broadcast

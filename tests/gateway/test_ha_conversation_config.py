@@ -6,6 +6,7 @@ def test_default_config_has_ha_conversation_section():
 
     section = DEFAULT_CONFIG["ha_conversation"]
     assert section["bind_host"] == "127.0.0.1"  # safe default: no LAN exposure
+    assert section["allowed_source_ips"] == ["127.0.0.1", "::1"]
     assert section["announce_mode"] == "off"
     assert section["ack_after_seconds"] > 0
     assert section["max_transcript_chars"] > 0
@@ -53,10 +54,13 @@ def test_gateway_config_chain_top_level(tmp_path, monkeypatch):
           enabled: true
           port: 10611
           announce_mode: broadcast
+          allowed_source_ips:
+            - 192.0.2.10
     """)
     assert pc is not None and pc.enabled is True
     assert pc.extra["port"] == 10611
     assert pc.extra["announce_mode"] == "broadcast"
+    assert pc.extra["allowed_source_ips"] == ["192.0.2.10"]
 
 
 def test_gateway_config_chain_nested_platforms(tmp_path, monkeypatch):

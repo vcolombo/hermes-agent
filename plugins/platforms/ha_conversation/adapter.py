@@ -23,6 +23,7 @@ looks up the background task the call just spawned (via the same
 
 import asyncio
 import importlib.util
+import ipaddress
 import logging
 import sys
 from pathlib import Path
@@ -41,6 +42,36 @@ logger = logging.getLogger(__name__)
 
 _ANNOUNCE_MODES = ("off", "last_active", "default_device", "broadcast")
 _HOME_CHAT_ID = "home"
+_LOOPBACK_BINDS = {"127.0.0.1", "::1", "localhost"}
+_LOOPBACK_SOURCE_IPS = ("127.0.0.1", "::1")
+
+
+def _source_networks(raw) -> tuple:
+    """Parse a config list/comma-string into strict=False IP networks."""
+    if isinstance(raw, str):
+        items = raw.split(",")
+    elif isinstance(raw, (list, tuple, set)):
+        items = raw
+    else:
+        raise ValueError("allowed_source_ips must be a string or list")
+    networks = tuple(
+        ipaddress.ip_network(str(item).strip(), strict=False)
+        for item in items
+        if str(item).strip()
+    )
+    if not networks:
+        raise ValueError("allowed_source_ips must not be empty")
+    return networks
+
+
+def _resolved_source_networks(extra: dict) -> tuple:
+    raw = extra.get("allowed_source_ips")
+    bind_host = str(extra.get("bind_host", "127.0.0.1")).strip().lower()
+    if raw is None:
+        if bind_host not in _LOOPBACK_BINDS:
+            raise ValueError("remote bind requires allowed_source_ips")
+        raw = _LOOPBACK_SOURCE_IPS
+    return _source_networks(raw)
 
 
 def _import_sibling(name: str):
@@ -85,6 +116,7 @@ def validate_config(config) -> bool:
         return False
     try:
         port = int(extra.get("port", 10600))
+        _resolved_source_networks(extra)
     except (TypeError, ValueError):
         return False
     if not 0 <= port < 65536:  # 0 = ephemeral, used by tests
@@ -108,7 +140,7 @@ def _apply_yaml_config(yaml_cfg: dict, platform_cfg: dict) -> Optional[dict]:
     """
     section = platform_cfg if isinstance(platform_cfg, dict) else {}
     known = ("bind_host", "port", "ack_after_seconds", "announce_mode",
-             "announce_entity", "max_transcript_chars")
+             "announce_entity", "max_transcript_chars", "allowed_source_ips")
     if not any(k in section for k in known):
         return None
     return {k: section[k] for k in known if k in section}
@@ -134,6 +166,10 @@ class HAConversationAdapter(BasePlatformAdapter):
         self._announce_mode = str(extra.get("announce_mode", "off"))
         self._announce_entity = str(extra.get("announce_entity", "") or "")
         self._max_chars = int(extra.get("max_transcript_chars", 2000))
+        self._allowed_source_networks = _resolved_source_networks(extra)
+        # Gateway authz may trust this adapter only as a real local allowlist,
+        # never as an authenticated upstream transport.
+        self._dm_policy = "allowlist"
         self._hs = _import_sibling("handle_server")
         self._server = None
         self._turn_lock = asyncio.Lock()
@@ -145,13 +181,15 @@ class HAConversationAdapter(BasePlatformAdapter):
     def server_port(self) -> int:
         return self._server.port if self._server is not None else self._port
 
-    # -- authorization: reaching the bound port is the grant ---------------
+    # -- authorization: local TCP source allowlist --------------------------
     @property
-    def authorization_is_upstream(self) -> bool:
-        """The operator chose what this port is reachable from (default
-        127.0.0.1; exposing it on a LAN/tailnet is an explicit opt-in).
-        There is no per-speaker identity in the Wyoming handle protocol —
-        same posture as voice_satellite."""
+    def enforces_own_access_policy(self) -> bool:
+        """Accepted sockets already passed ``allowed_source_ips``.
+
+        The gateway may trust this as a local ``dm_policy: allowlist``
+        decision. It is deliberately not upstream authorization: Wyoming has
+        no authenticated transport or speaker identity.
+        """
         return True
 
     # -- lifecycle -----------------------------------------------------------
@@ -162,6 +200,7 @@ class HAConversationAdapter(BasePlatformAdapter):
             self._port,
             on_transcript=self._on_transcript,
             supports_home_control=supports_control,
+            allowed_source_networks=self._allowed_source_networks,
         )
         try:
             await self._server.start()
