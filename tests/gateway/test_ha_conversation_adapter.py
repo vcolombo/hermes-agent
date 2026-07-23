@@ -23,22 +23,33 @@ def make_config(**overrides):
 
 
 def test_validate_config():
-    assert _mod.validate_config(make_config()) is True
+    assert _mod.validate_config(make_config(port=10600)) is True
+    assert _mod.validate_config(make_config(port=0)) is False
     assert _mod.validate_config(make_config(port="not-a-port")) is False
-    assert _mod.validate_config(make_config(announce_mode="bogus")) is False
+    assert _mod.validate_config(make_config(port=10600, announce_mode="bogus")) is False
     assert _mod.validate_config(
-        make_config(announce_mode="default_device", announce_entity="")
+        make_config(port=10600, announce_mode="default_device", announce_entity="")
     ) is False
     assert _mod.validate_config(
-        make_config(announce_mode="default_device",
+        make_config(port=10600, announce_mode="default_device",
                     announce_entity="assist_satellite.kitchen")
     ) is True
-    assert _mod.validate_config(make_config(bind_host="0.0.0.0")) is False
     assert _mod.validate_config(
-        make_config(bind_host="0.0.0.0", allowed_source_ips=["192.0.2.10"])
+        make_config(port=10600, bind_host="0.0.0.0")
+    ) is False
+    assert _mod.validate_config(
+        make_config(port=10600, bind_host="0.0.0.0",
+                    allowed_source_ips=["192.0.2.10"])
     ) is True
     assert _mod.validate_config(
-        make_config(allowed_source_ips=["not-an-ip"])
+        make_config(port=10600, bind_host="0.0.0.0",
+                    allowed_source_ips=["0.0.0.0/0"])
+    ) is False
+    assert _mod.validate_config(
+        make_config(port=10600, bind_host="::", allowed_source_ips=["::/0"])
+    ) is False
+    assert _mod.validate_config(
+        make_config(port=10600, allowed_source_ips=["not-an-ip"])
     ) is False
     # empty extra: platform unconfigured
     assert _mod.validate_config(PlatformConfig(extra={})) is False

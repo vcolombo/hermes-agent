@@ -179,9 +179,14 @@ async def test_stop_drains_blocked_connection_and_releases_port():
     the transports itself, and only then close the listener.
     """
     never_set = asyncio.Event()
+    cancelled = asyncio.Event()
 
     async def blocks_forever(text, context, respond):
-        await never_set.wait()
+        try:
+            await never_set.wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
         await respond("unreachable")  # never actually reached
 
     server = make_server(blocks_forever)
@@ -191,6 +196,7 @@ async def test_stop_drains_blocked_connection_and_releases_port():
         await client.write_event(Transcript("hang please").event())
         await asyncio.sleep(0.05)  # let the server start handling the transcript
         await asyncio.wait_for(server.stop(), timeout=2)
+        await asyncio.wait_for(cancelled.wait(), timeout=2)
         event = await asyncio.wait_for(client.read_event(), 5)
     assert Handled.is_type(event.type)
     assert Handled.from_event(event).text  # non-empty shutdown text

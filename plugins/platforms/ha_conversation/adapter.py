@@ -61,6 +61,8 @@ def _source_networks(raw) -> tuple:
     )
     if not networks:
         raise ValueError("allowed_source_ips must not be empty")
+    if any(network.prefixlen == 0 for network in networks):
+        raise ValueError("allowed_source_ips must not contain a catch-all network")
     return networks
 
 
@@ -119,7 +121,7 @@ def validate_config(config) -> bool:
         _resolved_source_networks(extra)
     except (TypeError, ValueError):
         return False
-    if not 0 <= port < 65536:  # 0 = ephemeral, used by tests
+    if not 1 <= port < 65536:
         return False
     mode = str(extra.get("announce_mode", "off"))
     if mode not in _ANNOUNCE_MODES:

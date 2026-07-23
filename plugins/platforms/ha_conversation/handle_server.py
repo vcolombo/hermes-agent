@@ -149,6 +149,7 @@ class HandleServer:
         )
         self._server: Optional[asyncio.AbstractServer] = None
         self._connections: set = set()
+        self._handler_tasks: set[asyncio.Task] = set()
         self.port: int = self._requested_port
 
     def _peer_allowed(self, writer) -> bool:
@@ -180,6 +181,9 @@ class HandleServer:
                 except (ConnectionError, OSError):
                     pass
                 return
+            task = asyncio.current_task()
+            if task is not None:
+                self._handler_tasks.add(task)
             conn_state = _ConnectionState(writer)
             self._connections.add(conn_state)
             handler = _Handler(
@@ -194,6 +198,8 @@ class HandleServer:
                 logger.exception("[ha_conversation] connection handler failed")
             finally:
                 self._connections.discard(conn_state)
+                if task is not None:
+                    self._handler_tasks.discard(task)
 
         self._server = await asyncio.start_server(
             _client_connected, self._bind_host, self._requested_port
@@ -228,6 +234,12 @@ class HandleServer:
                 conn.writer.close()
             except Exception:
                 pass
+        tasks = list(self._handler_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._handler_tasks.clear()
         self._connections.clear()
         self._server.close()
         await self._server.wait_closed()
