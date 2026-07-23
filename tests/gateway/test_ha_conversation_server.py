@@ -170,6 +170,45 @@ async def test_rejects_tcp_peer_outside_source_allowlist():
 
 
 @pytest.mark.asyncio
+async def test_late_rejected_callback_closes_without_waiting(monkeypatch):
+    captured = {}
+
+    class Socket:
+        def getsockname(self):
+            return ("127.0.0.1", 10600)
+
+    class Listener:
+        sockets = [Socket()]
+
+    async def fake_start_server(callback, host, port):
+        captured["callback"] = callback
+        return Listener()
+
+    class Writer:
+        closed = False
+
+        def get_extra_info(self, name):
+            return ("127.0.0.1", 12345) if name == "peername" else None
+
+        def close(self):
+            self.closed = True
+
+        async def wait_closed(self):
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(asyncio, "start_server", fake_start_server)
+    server = make_server(_echo)
+    await server.start()
+    server._stopping = True
+    writer = Writer()
+
+    await asyncio.wait_for(captured["callback"](None, writer), timeout=0.2)
+
+    assert writer.closed is True
+    assert not server._handler_tasks
+
+
+@pytest.mark.asyncio
 async def test_stop_closes_listener_before_draining_connections():
     events = []
 

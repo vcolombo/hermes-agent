@@ -172,33 +172,31 @@ class HandleServer:
         """Bind and serve. Raises OSError if the port cannot be bound."""
 
         async def _client_connected(reader, writer):
-            if self._stopping or not self._peer_allowed(writer):
-                logger.warning(
-                    "[ha_conversation] rejected TCP peer during stop or outside allowed_source_ips"
-                )
-                writer.close()
-                try:
-                    await writer.wait_closed()
-                except (ConnectionError, OSError):
-                    pass
-                return
             task = asyncio.current_task()
             if task is not None:
                 self._handler_tasks.add(task)
-            conn_state = _ConnectionState(writer)
-            self._connections.add(conn_state)
-            handler = _Handler(
-                reader, writer, info=self._info, on_transcript=self._on_transcript,
-                conn_state=conn_state,
-            )
             try:
-                await handler.run()
-            except (ConnectionError, asyncio.IncompleteReadError):
-                pass  # client vanished mid-frame; per-connection, nothing to reset
-            except Exception:
-                logger.exception("[ha_conversation] connection handler failed")
+                if self._stopping or not self._peer_allowed(writer):
+                    logger.warning(
+                        "[ha_conversation] rejected TCP peer during stop or outside allowed_source_ips"
+                    )
+                    writer.close()
+                    return
+                conn_state = _ConnectionState(writer)
+                self._connections.add(conn_state)
+                handler = _Handler(
+                    reader, writer, info=self._info, on_transcript=self._on_transcript,
+                    conn_state=conn_state,
+                )
+                try:
+                    await handler.run()
+                except (ConnectionError, asyncio.IncompleteReadError):
+                    pass  # client vanished mid-frame; per-connection, nothing to reset
+                except Exception:
+                    logger.exception("[ha_conversation] connection handler failed")
+                finally:
+                    self._connections.discard(conn_state)
             finally:
-                self._connections.discard(conn_state)
                 if task is not None:
                     self._handler_tasks.discard(task)
 
