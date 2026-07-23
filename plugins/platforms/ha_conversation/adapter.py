@@ -44,6 +44,7 @@ _ANNOUNCE_MODES = ("off", "last_active", "default_device", "broadcast")
 _HOME_CHAT_ID = "home"
 _LOOPBACK_BINDS = {"127.0.0.1", "::1", "localhost"}
 _LOOPBACK_SOURCE_IPS = ("127.0.0.1", "::1")
+_IPV4_MAPPED_SPACE = ipaddress.IPv6Network("::ffff:0:0/96")
 
 
 def _source_networks(raw) -> tuple:
@@ -63,6 +64,12 @@ def _source_networks(raw) -> tuple:
         raise ValueError("allowed_source_ips must not be empty")
     if any(network.prefixlen == 0 for network in networks):
         raise ValueError("allowed_source_ips must not contain a catch-all network")
+    if any(
+        isinstance(network, ipaddress.IPv6Network)
+        and _IPV4_MAPPED_SPACE.subnet_of(network)
+        for network in networks
+    ):
+        raise ValueError("allowed_source_ips must not admit all IPv4-mapped peers")
     return networks
 
 

@@ -49,6 +49,13 @@ def test_validate_config():
         make_config(port=10600, bind_host="::", allowed_source_ips=["::/0"])
     ) is False
     assert _mod.validate_config(
+        make_config(
+            port=10600,
+            bind_host="::",
+            allowed_source_ips=["::ffff:0:0/96"],
+        )
+    ) is False
+    assert _mod.validate_config(
         make_config(port=10600, allowed_source_ips=["not-an-ip"])
     ) is False
     # empty extra: platform unconfigured

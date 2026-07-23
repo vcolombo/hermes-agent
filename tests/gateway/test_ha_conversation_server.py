@@ -170,6 +170,37 @@ async def test_rejects_tcp_peer_outside_source_allowlist():
 
 
 @pytest.mark.asyncio
+async def test_stop_closes_listener_before_draining_connections():
+    events = []
+
+    class Listener:
+        def close(self):
+            events.append("listener.close")
+
+        async def wait_closed(self):
+            events.append("listener.wait_closed")
+
+    class Writer:
+        def close(self):
+            events.append("writer.close")
+
+    async def respond(text):
+        events.append("respond")
+        return True
+
+    server = make_server(_echo)
+    server._server = Listener()
+    state = hs._ConnectionState(Writer())
+    state.respond = respond
+    server._connections.add(state)
+
+    await server.stop()
+
+    assert events[0] == "listener.close"
+    assert events[-1] == "listener.wait_closed"
+
+
+@pytest.mark.asyncio
 async def test_stop_drains_blocked_connection_and_releases_port():
     """Important-3 regression: stop() must not block on wait_closed() until
     every connection's on_transcript callback returns — a hung callback

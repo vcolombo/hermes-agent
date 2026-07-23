@@ -150,6 +150,7 @@ class HandleServer:
         self._server: Optional[asyncio.AbstractServer] = None
         self._connections: set = set()
         self._handler_tasks: set[asyncio.Task] = set()
+        self._stopping = False
         self.port: int = self._requested_port
 
     def _peer_allowed(self, writer) -> bool:
@@ -171,9 +172,9 @@ class HandleServer:
         """Bind and serve. Raises OSError if the port cannot be bound."""
 
         async def _client_connected(reader, writer):
-            if not self._peer_allowed(writer):
+            if self._stopping or not self._peer_allowed(writer):
                 logger.warning(
-                    "[ha_conversation] rejected TCP peer outside allowed_source_ips"
+                    "[ha_conversation] rejected TCP peer during stop or outside allowed_source_ips"
                 )
                 writer.close()
                 try:
@@ -201,6 +202,7 @@ class HandleServer:
                 if task is not None:
                     self._handler_tasks.discard(task)
 
+        self._stopping = False
         self._server = await asyncio.start_server(
             _client_connected, self._bind_host, self._requested_port
         )
@@ -220,6 +222,8 @@ class HandleServer:
         """
         if self._server is None:
             return
+        self._stopping = True
+        self._server.close()
         connections = list(self._connections)
         for conn in connections:
             if conn.respond is not None:
@@ -241,6 +245,5 @@ class HandleServer:
             await asyncio.gather(*tasks, return_exceptions=True)
         self._handler_tasks.clear()
         self._connections.clear()
-        self._server.close()
         await self._server.wait_closed()
         self._server = None
